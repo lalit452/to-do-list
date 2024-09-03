@@ -17,10 +17,10 @@
             margin-bottom: 10px;
             padding: 10px;
             border-radius: 5px;
-            background-color: #f0f0f0;
+            background-color: #ff00ae;
         }
 
-        .delete-btn {
+        .delete-btn, .edit-btn {
             margin-left: 10px;
             background-color: red;
             color: white;
@@ -31,17 +31,34 @@
         }
 
         .edit-btn {
-            margin-left: 10px;
             background-color: green;
+        }
+
+        #date-selector {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        #prev-date, #next-date, #days-analytics-btn {
+            background-color: #2b84ea;
             color: white;
             border: none;
             padding: 5px;
             cursor: pointer;
             border-radius: 3px;
+            margin: 0 10px;
         }
     </style>
 </head>
 <body>
+    <div id="date-selector">
+        <button id="prev-date">&lt;</button>
+        <span id="current-date"></span>
+        <button id="next-date">&gt;</button>
+        <button id="days-analytics-btn">Days Analytics</button>
+    </div>
+
     <form id="task-form">
         <input type="text" id="task-name" placeholder="Task Name" required>
         <input type="time" id="task-start-time" required>
@@ -51,9 +68,30 @@
     <ul id="task-list"></ul>
 
     <script>
-        document.addEventListener('DOMContentLoaded', loadTasks);
+        let selectedDate = new Date();
+
+        document.addEventListener('DOMContentLoaded', () => {
+            loadTasksForDate(selectedDate);
+            updateDateDisplay();
+        });
 
         document.getElementById('task-form').addEventListener('submit', addTask);
+        document.getElementById('prev-date').addEventListener('click', () => changeDate(-1));
+        document.getElementById('next-date').addEventListener('click', () => changeDate(1));
+        document.getElementById('days-analytics-btn').addEventListener('click', () => {
+            const monthYear = `${selectedDate.getFullYear()}-${selectedDate.getMonth() + 1}`;
+            window.location.href = `days-analytics.html?month=${monthYear}`;
+        });
+
+        function updateDateDisplay() {
+            document.getElementById('current-date').innerText = selectedDate.toDateString();
+        }
+
+        function changeDate(offset) {
+            selectedDate.setDate(selectedDate.getDate() + offset);
+            updateDateDisplay();
+            loadTasksForDate(selectedDate);
+        }
 
         function addTask(e) {
             e.preventDefault();
@@ -62,30 +100,39 @@
             const startTime = document.getElementById('task-start-time').value;
             const endTime = document.getElementById('task-end-time').value;
 
-            const task = { name: taskName, startTime: startTime, endTime: endTime };
+            // Validate times
+            if (startTime >= endTime) {
+                alert('End time must be later than start time.');
+                return;
+            }
 
-            let tasks = getTasks();
+            const task = { name: taskName, startTime: startTime, endTime: endTime };
+            const tasks = getTasksForDate(selectedDate);
             tasks.push(task);
 
             tasks.sort((a, b) => a.startTime.localeCompare(b.startTime));
+            saveTasksForDate(selectedDate, tasks);
 
-            localStorage.setItem('tasks', JSON.stringify(tasks));
-
-            renderTasks();
-
+            renderTasks(tasks);
             document.getElementById('task-form').reset();
         }
 
-        function getTasks() {
-            return localStorage.getItem('tasks') ? JSON.parse(localStorage.getItem('tasks')) : [];
+        function getTasksForDate(date) {
+            const formattedDate = date.toISOString().split('T')[0];
+            return localStorage.getItem(formattedDate) ? JSON.parse(localStorage.getItem(formattedDate)) : [];
         }
 
-        function loadTasks() {
-            renderTasks();
+        function saveTasksForDate(date, tasks) {
+            const formattedDate = date.toISOString().split('T')[0];
+            localStorage.setItem(formattedDate, JSON.stringify(tasks));
         }
 
-        function renderTasks() {
-            const tasks = getTasks();
+        function loadTasksForDate(date) {
+            const tasks = getTasksForDate(date);
+            renderTasks(tasks);
+        }
+
+        function renderTasks(tasks) {
             const taskList = document.getElementById('task-list');
             taskList.innerHTML = '';
 
@@ -152,14 +199,14 @@
         }
 
         function deleteTask(startTime) {
-            let tasks = getTasks();
+            let tasks = getTasksForDate(selectedDate);
             tasks = tasks.filter(task => task.startTime !== startTime);
-            localStorage.setItem('tasks', JSON.stringify(tasks));
-            renderTasks();
+            saveTasksForDate(selectedDate, tasks);
+            renderTasks(tasks);
         }
 
         function editTask(startTime) {
-            let tasks = getTasks();
+            let tasks = getTasksForDate(selectedDate);
             const taskToEdit = tasks.find(task => task.startTime === startTime);
 
             if (taskToEdit) {
@@ -167,343 +214,107 @@
                 document.getElementById('task-start-time').value = taskToEdit.startTime;
                 document.getElementById('task-end-time').value = taskToEdit.endTime;
 
-                // Remove the task being edited
                 tasks = tasks.filter(task => task.startTime !== startTime);
-                localStorage.setItem('tasks', JSON.stringify(tasks));
+                saveTasksForDate(selectedDate, tasks);
 
-                renderTasks();
+                renderTasks(tasks);
             }
         }
+
+        // Modify renderTasks function to include the Study button
+function renderTasks(tasks) {
+    const taskList = document.getElementById('task-list');
+    taskList.innerHTML = '';
+
+    let lastEndTime = "00:00";
+
+    tasks.forEach(task => {
+        if (lastEndTime < task.startTime) {
+            renderNotAllottedTimeSlot(taskList, lastEndTime, task.startTime);
+        }
+        const li = document.createElement('li');
+        li.innerHTML = `
+            <span>${task.name} (${formatTime(task.startTime)} - ${formatTime(task.endTime)})</span>
+            <button class="study-btn" onclick="toggleStudy('${task.startTime}')">Study</button>
+            <button class="edit-btn" onclick="editTask('${task.startTime}')">Edit</button>
+            <button class="delete-btn" onclick="deleteTask('${task.startTime}')">Delete</button>
+        `;
+        // Check if the task is marked as studied
+        if (task.isStudied) {
+            li.style.backgroundColor = '#ff00ae';
+        } else {
+            li.style.backgroundColor = 'pink';
+        }
+        taskList.appendChild(li);
+        lastEndTime = task.endTime;
+    });
+
+    if (lastEndTime < "23:59") {
+        renderNotAllottedTimeSlot(taskList, lastEndTime, "23:59");
+    }
+}
+
+// Add toggleStudy function to handle color change
+function toggleStudy(startTime) {
+    const tasks = getTasksForDate(selectedDate);
+    const task = tasks.find(task => task.startTime === startTime);
+
+    if (task) {
+        task.isStudied = !task.isStudied;
+        saveTasksForDate(selectedDate, tasks);
+        renderTasks(tasks);
+    }
+}
+
+// Modify renderTasks function to include the Study button
+function renderTasks(tasks) {
+    const taskList = document.getElementById('task-list');
+    taskList.innerHTML = '';
+
+    let lastEndTime = "00:00";
+
+    tasks.forEach(task => {
+        if (lastEndTime < task.startTime) {
+            renderNotAllottedTimeSlot(taskList, lastEndTime, task.startTime);
+        }
+        const li = document.createElement('li');
+        const taskDuration = calculateDuration(task.startTime, task.endTime);
+
+        li.innerHTML = `
+            <span>${task.name} (${formatTime(task.startTime)} - ${formatTime(task.endTime)})</span>
+            <button class="study-btn" onclick="toggleStudy('${task.startTime}', this)">Study</button>
+            <button class="edit-btn" onclick="editTask('${task.startTime}')">Edit</button>
+            <button class="delete-btn" onclick="deleteTask('${task.startTime}')">Delete</button>
+        `;
+        // Check if the task is marked as studied
+        if (task.isStudied) {
+            li.style.backgroundColor = '#ff00ae';
+            li.innerHTML += `<span style="display: block; margin-top: 5px;">Total Time: ${taskDuration}</span>`;
+        } else {
+            li.style.backgroundColor = 'pink';
+        }
+        taskList.appendChild(li);
+        lastEndTime = task.endTime;
+    });
+
+    if (lastEndTime < "23:59") {
+        renderNotAllottedTimeSlot(taskList, lastEndTime, "23:59");
+    }
+}
+
+// Add toggleStudy function to handle color change and display total time
+function toggleStudy(startTime, buttonElement) {
+    const tasks = getTasksForDate(selectedDate);
+    const task = tasks.find(task => task.startTime === startTime);
+
+    if (task) {
+        task.isStudied = !task.isStudied;
+        saveTasksForDate(selectedDate, tasks);
+        renderTasks(tasks);
+    }
+}
+
+
     </script>
 </body>
 </html>
-
-
-
-<!-- unallocated time with edit button -->
-<!-- <!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Task List with Time Allotment</title>
-    <style>
-        .not-allotted {
-            background-color: pink;
-            padding: 10px;
-            border-radius: 5px;
-            margin-bottom: 10px;
-        }
-
-        li {
-            list-style: none;
-            margin-bottom: 10px;
-            padding: 10px;
-            border-radius: 5px;
-            background-color: #f0f0f0;
-        }
-
-        .delete-btn {
-            margin-left: 10px;
-            background-color: red;
-            color: white;
-            border: none;
-            padding: 5px;
-            cursor: pointer;
-            border-radius: 3px;
-        }
-
-        .edit-btn {
-            margin-left: 10px;
-            background-color: green;
-            color: white;
-            border: none;
-            padding: 5px;
-            cursor: pointer;
-            border-radius: 3px;
-        }
-    </style>
-</head>
-<body>
-    <form id="task-form">
-        <input type="text" id="task-name" placeholder="Task Name" required>
-        <input type="time" id="task-start-time" required>
-        <input type="time" id="task-end-time" required>
-        <button type="submit">Add Task</button>
-    </form>
-    <ul id="task-list"></ul>
-
-    <script>
-        document.addEventListener('DOMContentLoaded', loadTasks);
-
-        document.getElementById('task-form').addEventListener('submit', addTask);
-
-        function addTask(e) {
-            e.preventDefault();
-
-            const taskName = document.getElementById('task-name').value;
-            const startTime = document.getElementById('task-start-time').value;
-            const endTime = document.getElementById('task-end-time').value;
-
-            const task = { name: taskName, startTime: startTime, endTime: endTime };
-
-            let tasks = getTasks();
-            tasks.push(task);
-
-            tasks.sort((a, b) => a.startTime.localeCompare(b.startTime));
-
-            localStorage.setItem('tasks', JSON.stringify(tasks));
-
-            renderTasks();
-
-            document.getElementById('task-form').reset();
-        }
-
-        function getTasks() {
-            return localStorage.getItem('tasks') ? JSON.parse(localStorage.getItem('tasks')) : [];
-        }
-
-        function loadTasks() {
-            renderTasks();
-        }
-
-        function renderTasks() {
-            const tasks = getTasks();
-            const taskList = document.getElementById('task-list');
-            taskList.innerHTML = '';
-
-            let lastEndTime = "00:00";
-
-            tasks.forEach(task => {
-                if (lastEndTime < task.startTime) {
-                    renderNotAllottedTimeSlot(taskList, lastEndTime, task.startTime);
-                }
-                const li = document.createElement('li');
-                li.innerHTML = `
-                    <span>${task.name} (${formatTime(task.startTime)} - ${formatTime(task.endTime)})</span>
-                    <button class="edit-btn" onclick="editTask('${task.startTime}')">Edit</button>
-                    <button class="delete-btn" onclick="deleteTask('${task.startTime}')">Delete</button>
-                `;
-                taskList.appendChild(li);
-                lastEndTime = task.endTime;
-            });
-
-            if (lastEndTime < "23:59") {
-                renderNotAllottedTimeSlot(taskList, lastEndTime, "23:59");
-            }
-        }
-
-        function renderNotAllottedTimeSlot(taskList, startTime, endTime) {
-            const li = document.createElement('li');
-            li.className = 'not-allotted';
-            li.innerHTML = `
-                <span>Not Allotted (${formatTime(startTime)} - ${formatTime(endTime)})</span>
-            `;
-            taskList.appendChild(li);
-        }
-
-        function formatTime(time) {
-            let [hours, minutes] = time.split(':');
-            hours = parseInt(hours);
-
-            let period = 'AM';
-            if (hours >= 12) {
-                period = 'PM';
-                hours = hours > 12 ? hours - 12 : hours;
-            } else if (hours === 0) {
-                hours = 12;
-            }
-
-            return `${hours}:${minutes} ${period}`;
-        }
-
-        function deleteTask(startTime) {
-            let tasks = getTasks();
-            tasks = tasks.filter(task => task.startTime !== startTime);
-            localStorage.setItem('tasks', JSON.stringify(tasks));
-            renderTasks();
-        }
-
-        function editTask(startTime) {
-            let tasks = getTasks();
-            const taskToEdit = tasks.find(task => task.startTime === startTime);
-
-            if (taskToEdit) {
-                document.getElementById('task-name').value = taskToEdit.name;
-                document.getElementById('task-start-time').value = taskToEdit.startTime;
-                document.getElementById('task-end-time').value = taskToEdit.endTime;
-
-                // Remove the task being edited
-                tasks = tasks.filter(task => task.startTime !== startTime);
-                localStorage.setItem('tasks', JSON.stringify(tasks));
-
-                renderTasks();
-            }
-        }
-    </script>
-</body>
-</html> -->
-
-
-<!-- time in ascending with no allocation time also -->
-<!-- <!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Task List with Time Allotment</title>
-    <style>
-        /* Your other styles */
-        
-        .not-allotted {
-            background-color: pink;
-            padding: 10px;
-            border-radius: 5px;
-            margin-bottom: 10px;
-        }
-
-        li {
-            list-style: none;
-            margin-bottom: 10px;
-            padding: 10px;
-            border-radius: 5px;
-            background-color: #f0f0f0;
-        }
-
-        .delete-btn {
-            margin-left: 10px;
-            background-color: red;
-            color: white;
-            border: none;
-            padding: 5px;
-            cursor: pointer;
-            border-radius: 3px;
-        }
-    </style>
-</head>
-<body>
-    <form id="task-form">
-        <input type="text" id="task-name" placeholder="Task Name" required>
-        <input type="time" id="task-start-time" required>
-        <input type="time" id="task-end-time" required>
-        <button type="submit">Add Task</button>
-    </form>
-    <ul id="task-list"></ul>
-
-    <script>
-        document.addEventListener('DOMContentLoaded', loadTasks);
-
-        document.getElementById('task-form').addEventListener('submit', addTask);
-
-        function addTask(e) {
-            e.preventDefault();
-
-            const taskName = document.getElementById('task-name').value;
-            const startTime = document.getElementById('task-start-time').value;
-            const endTime = document.getElementById('task-end-time').value;
-
-            const task = { name: taskName, startTime: startTime, endTime: endTime };
-
-            let tasks = getTasks();
-            tasks.push(task);
-
-            tasks.sort((a, b) => a.startTime.localeCompare(b.startTime));
-
-            localStorage.setItem('tasks', JSON.stringify(tasks));
-
-            renderTasks();
-
-            document.getElementById('task-form').reset();
-        }
-
-        function getTasks() {
-            return localStorage.getItem('tasks') ? JSON.parse(localStorage.getItem('tasks')) : [];
-        }
-
-        function loadTasks() {
-            renderTasks();
-        }
-
-        function renderTasks() {
-            const tasks = getTasks();
-            const taskList = document.getElementById('task-list');
-            taskList.innerHTML = '';
-
-            let lastEndTime = "00:00";
-
-            tasks.forEach(task => {
-                if (lastEndTime < task.startTime) {
-                    renderNotAllottedTimeSlot(taskList, lastEndTime, task.startTime);
-                }
-                const li = document.createElement('li');
-                li.innerHTML = `
-                    <span>${task.name} (${formatTime(task.startTime)} - ${formatTime(task.endTime)})</span>
-                    <button class="delete-btn" onclick="deleteTask('${task.startTime}')">Delete</button>
-                `;
-                taskList.appendChild(li);
-                lastEndTime = task.endTime;
-            });
-
-            if (lastEndTime < "23:59") {
-                renderNotAllottedTimeSlot(taskList, lastEndTime, "23:59");
-            }
-        }
-
-        function renderNotAllottedTimeSlot(taskList, startTime, endTime) {
-            const li = document.createElement('li');
-            li.className = 'not-allotted'; // Apply the CSS class
-            li.innerHTML = `
-                <span>Not Allotted (${formatTime(startTime)} - ${formatTime(endTime)})</span>
-            `;
-            taskList.appendChild(li);
-        }
-
-        function formatTime(time) {
-            let [hours, minutes] = time.split(':');
-            hours = parseInt(hours);
-
-            let period = 'AM';
-            if (hours >= 12) {
-                period = 'PM';
-                hours = hours > 12 ? hours - 12 : hours;
-            } else if (hours === 0) {
-                hours = 12;
-            }
-
-            return `${hours}:${minutes} ${period}`;
-        }
-
-        function deleteTask(startTime) {
-            let tasks = getTasks();
-            tasks = tasks.filter(task => task.startTime !== startTime);
-            localStorage.setItem('tasks', JSON.stringify(tasks));
-            renderTasks();
-        }
-    </script>
-</body>
-</html> -->
-
-
-// basic time with acending order
-<!-- <!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Time Allotment To-Do List</title>
-    <link rel="stylesheet" href="styles.css">
-</head>
-<body>
-    <div class="container">
-        <h1>Time Allotment To-Do List</h1>
-        <form id="task-form">
-            <input type="text" id="task-name" placeholder="Task Name" required>
-            <input type="time" id="task-start-time" required>
-            <input type="time" id="task-end-time" required>
-            <button type="submit">Add Task</button>
-        </form>
-        <ul id="task-list"></ul>
-    </div>
-    <script src="script.js"></script>
-</body>
-</html> -->
